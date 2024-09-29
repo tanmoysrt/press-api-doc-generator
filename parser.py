@@ -98,7 +98,7 @@ class TreeInfo:
         self.functions: list[FunctionInfo] = []
         self.module_path: str = module_path
 
-        for node in ast.walk(ast.parse(content)):
+        for node in ast.parse(content).body:
             if isinstance(node, ast.ClassDef):
                 self.classes.append(ClassInfo(node))
             elif isinstance(node, ast.FunctionDef):

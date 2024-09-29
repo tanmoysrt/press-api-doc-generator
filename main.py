@@ -5,7 +5,7 @@ from parser import TreeInfo
 from utils import generate_module_path, get_allowed_doctypes, get_doctype_name
 
 
-class PressAPIGenerator:
+class PressAPIDocGenerator:
     BLACKLISTED_PATHS = [
         "backbone",
         "dashboard",
@@ -86,6 +86,8 @@ class PressAPIGenerator:
 
     def generate_api_doc(self) -> dict:
         apis = {}  # group name -> [api]
+
+        # frappe.whitelist methods
         for tree in self.parsed_objects:
             apis[tree.module_path] = []
             for fun in tree.functions:
@@ -105,7 +107,7 @@ class PressAPIGenerator:
                         }
                     )
 
-        # add doctype specific methods
+        # add doctype specific methods - [run_doc_method, get, get_list]
         for tree in self.parsed_objects:
             for cls in tree.classes:
                 doctype = get_doctype_name(cls.name)
@@ -202,28 +204,31 @@ You can specify the required fields in `fields` parameter."""
                         },
                     }
                 )
+        # cleanup - remove records with no methods
+        apis = {k: v for k, v in apis.items() if len(v) > 0}
         return apis
 
 
-# recurse("press/press/api", "press.api")
+# print(json.dumps(PressAPIDocGenerator("press").as_dict(), indent=4))
 
-# print(len(parsed_objects))
-# print(json.dumps([obj.as_dict() for obj in parsed_objects], indent=4))
-
-
-# def parse_api_docs(file_path, module_path):
-#     content = open(file_path).read()
-#     print(TreeInfo(content, module_path).as_dict())
-
-
-# parse_api_docs(
-#     "press/press/press/doctype/site/site.py", "press.press.doctype.site.site"
-# )
-
-
-# print(json.dumps(PressAPIGenerator("press").as_dict(), indent=4))
-
-api_specs = PressAPIGenerator("press").generate_api_doc()
+api_specs = PressAPIDocGenerator("press").generate_api_doc()
 
 with open("specs.json", "w") as f:
     json.dump(api_specs, f, indent=4)
+
+# import ast
+
+# x = """
+# class Test:
+#     def hemlock(self, a, b):
+#         pass
+        
+# def hemlock(a, b):
+#     pass
+
+# """
+
+# for node in ast.parse(x).body:
+#     print(ast.dump(node))
+
+# print(ast.dump(ast.parse(x)))
