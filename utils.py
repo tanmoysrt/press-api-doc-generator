@@ -1,5 +1,6 @@
 import ast
 import contextlib
+import os
 
 
 def get_decorator_name(decorator) -> str:
@@ -32,7 +33,7 @@ def pretty_annotation(annotation) -> str:
     else:
         if annotation is None:
             return ""
-        return str(annotation)
+        return ast.unparse(annotation)
 
 
 def generate_module_path(base_module_path: str, file_or_dir: str):
@@ -42,3 +43,32 @@ def generate_module_path(base_module_path: str, file_or_dir: str):
     if base_module_path:
         return base_module_path + "." + file_or_dir
     return file_or_dir
+
+
+def get_allowed_doctypes(base_path: str) -> list[str]:
+    path = os.path.join(base_path, "press/api/client.py")
+    with open(path) as f:
+        content = f.read()
+    parsed = ast.parse(content)
+    # looks for ALLOWED_DOCTYPES
+    for node in ast.walk(parsed):
+        if isinstance(node, ast.Assign):
+            if (
+                node.targets
+                and node.targets[0].id == "ALLOWED_DOCTYPES"
+                and hasattr(node.value, "elts")
+                and isinstance(node.value.elts, list)
+            ):
+                return [elt.value for elt in node.value.elts]
+    return []
+
+
+def get_doctype_name(text):
+    result = []
+    for i, char in enumerate(text):
+        if i > 0:
+            if char.isupper():
+                if (i < len(text) - 1 and text[i + 1].islower()) or text[i - 1].islower():
+                    result.append(" ")
+        result.append(char)
+    return "".join(result)

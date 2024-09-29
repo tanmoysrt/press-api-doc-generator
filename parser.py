@@ -3,12 +3,12 @@ from utils import pretty_annotation, get_decorator_name
 
 
 class FunctionArg:
-    def __init__(self, arg: ast.arg):
+    def __init__(self, arg: ast.arg, default: ast.Constant = None):
         self.name = arg.arg
         self.annotation = pretty_annotation(arg.annotation)
-
-    def __repr__(self):
-        return f"FunctionArg(name={self.name}, annotation={self.annotation})"
+        self.default = ""
+        if default:
+            self.default = ast.unparse(default)
 
     def as_dict(self):
         return {"type": "FunctionArg", "name": self.name, "annotation": self.annotation}
@@ -23,15 +23,24 @@ class FunctionInfo:
             and hasattr(func.body[0].value, "value")
             and isinstance(func.body[0].value.value, str)
         ):
-            self.docs = func.body[0].value.value
+            self.docs = func.body[0].value.value.strip()
         else:
             self.docs = ""
+        default_args = []
+        if hasattr(func, "args") and hasattr(func.args, "defaults"):
+            default_args = func.args.defaults
         self.args: list[FunctionArg] = []
         if hasattr(func, "args") and hasattr(func.args, "args"):
-            for arg in func.args.args:
+            for index, arg in enumerate(func.args.args):
                 if arg.arg == "self":
                     continue
-                self.args.append(FunctionArg(arg))
+                default_arg = None
+                if index >= len(func.args.args) - len(default_args):
+                    default_arg = default_args[
+                        index - (len(func.args.args) - len(default_args))
+                    ]
+
+                self.args.append(FunctionArg(arg, default_arg))
         self.decorators: list[str] = []
         if hasattr(func, "decorator_list"):
             for decorator in func.decorator_list:
@@ -41,9 +50,6 @@ class FunctionInfo:
 
         self.is_whitelisted_api = "frappe.whitelist" in self.decorators
         self.is_whitelisted_method = "dashboard_whitelist" in self.decorators
-
-    def __repr__(self):
-        return f"FunctionInfo(name={self.name}, docs={self.docs}), args={self.args}, decorators={self.decorators}, is_whitelisted_api={self.is_whitelisted_api}, is_whitelisted_method={self.is_whitelisted_method}"
 
     def as_dict(self):
         return {
@@ -77,9 +83,6 @@ class ClassInfo:
                             if isinstance(elt, ast.Constant):
                                 self.dashboard_fields.append(elt.value)
 
-    def __repr__(self):
-        return f"ClassInfo(name={self.name}, dashboard_fields={self.dashboard_fields}, functions={self.functions})"
-
     def as_dict(self):
         return {
             "type": "Class",
@@ -100,9 +103,6 @@ class TreeInfo:
                 self.classes.append(ClassInfo(node))
             elif isinstance(node, ast.FunctionDef):
                 self.functions.append(FunctionInfo(node))
-
-    def __repr__(self):
-        return f"TreeInfo(module_path={self.module_path}, classes={self.classes}, functions={self.functions})"
 
     def as_dict(self):
         return {

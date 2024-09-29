@@ -2,7 +2,7 @@ import json
 import os
 
 from parser import TreeInfo
-from utils import generate_module_path
+from utils import generate_module_path, get_allowed_doctypes, get_doctype_name
 
 
 class PressAPIGenerator:
@@ -16,7 +16,6 @@ class PressAPIGenerator:
         "press/experimental",
         "press/press/report",
         "press/experimental",
-        "press/saas",
         "press/www",
         "press/patches",
         "press/api/tests",
@@ -44,7 +43,6 @@ class PressAPIGenerator:
         "press/press/audit.py",
         "press/press/__init__.py",
         "press/press/cleanup.py",
-        "press/press/doctype",
     ]
 
     def __init__(self, target_path: str):
@@ -52,9 +50,10 @@ class PressAPIGenerator:
         self.BLACKLISTED_PATHS = [
             os.path.join(target_path, path) for path in self.BLACKLISTED_PATHS
         ]
+        self.allowed_doctypes = get_allowed_doctypes(target_path)
         self.parsed_objects: list[TreeInfo] = []
         # self.recurse(target_path, "")
-        self.recurse("press/press/api", "press.api")
+        self.recurse("press/press", "press")
 
     def is_blacklisted(self, path):
         for blacklisted_path in self.BLACKLISTED_PATHS:
@@ -66,7 +65,11 @@ class PressAPIGenerator:
         for root, dirs, files in os.walk(path):
             for file in files:
                 file_path = os.path.join(root, file)
-                if file.endswith(".py") and not self.is_blacklisted(file_path):
+                if (
+                    file.endswith(".py")
+                    and not self.is_blacklisted(file_path)
+                    and not file.startswith("test_")
+                ):
                     self.parsed_objects.append(
                         TreeInfo(
                             open(file_path).read(),
@@ -82,62 +85,124 @@ class PressAPIGenerator:
         return [obj.as_dict() for obj in self.parsed_objects]
 
     def generate_api_doc(self) -> dict:
-        paths = {}
-        tags = []
+        apis = {}  # group name -> [api]
         for tree in self.parsed_objects:
+            apis[tree.module_path] = []
             for fun in tree.functions:
                 if fun.is_whitelisted_api:
-                    paths[f"/api/method/{tree.module_path}.{fun.name}"] = {
-                        "post": {
-                            "tags": [tree.module_path],
+                    apis[tree.module_path].append(
+                        {
+                            "method": "POST",
+                            "path": f"/api/method/{tree.module_path}.{fun.name}",
                             "description": fun.docs,
-                            "requestBody": {
-                                "required": len(fun.args) > 0,
-                                "content": {
-                                    "application/json": {
-                                        "schema": {
-                                            "type": "object",
-                                            "properties": {
-                                                x.name: {
-                                                    "type": x.annotation,
-                                                }
-                                                for x in fun.args
-                                            },
-                                            "required": [x.name for x in fun.args],
-                                        }
-                                    }
-                                },
+                            "parameters": {
+                                x.name: {
+                                    "default": x.default,
+                                    "type": x.annotation or "any",
+                                }
+                                for x in fun.args
                             },
-                            "responses": {"200": {"description": "Successful"}},
                         }
-                    }
+                    )
 
-            if len(tree.functions) > 0:
-                tags.append(
+        # add doctype specific methods
+        for tree in self.parsed_objects:
+            for cls in tree.classes:
+                doctype = get_doctype_name(cls.name)
+                if doctype not in self.allowed_doctypes:
+                    continue
+                apis[cls.name] = []
+                # press.api.client.run_doc_method
+                for fun in cls.functions:
+                    if not fun.is_whitelisted_method:
+                        continue
+                    data = {
+                        "method": "POST",
+                        "path": f"/api/method/press.api.client.run_doc_method",
+                        "description": fun.docs,
+                        "parameters": {
+                            "dt": {
+                                "default": doctype,
+                                "type": "string",
+                            },
+                            "dn": {
+                                "default": "Replace with the document name",
+                                "type": "string",
+                            },
+                            "method": {
+                                "default": fun.name,
+                                "type": "string",
+                            },
+                        },
+                    }
+                    if fun.args:
+                        data["parameters"]["args"] = {
+                            x.name: {
+                                "default": x.default,
+                                "type": x.annotation or "any",
+                            }
+                            for x in fun.args
+                        }
+                    apis[cls.name].append(data)
+                # press.api.client.get
+                get_fields_documentation = f"""These fields will be available in the response:
+- {', '.join(cls.dashboard_fields)}
+
+Please note that, you can receive some additional fields as well. Try out the API to know more."""
+                apis[cls.name].append(
                     {
-                        "name": tree.module_path,
+                        "method": "POST",
+                        "path": f"/api/method/press.api.client.get",
+                        "description": get_fields_documentation,
+                        "parameters": {
+                            "doctype": {"default": doctype, "type": "str"},
+                            "name": {
+                                "default": "Replace with the document name",
+                                "type": "str",
+                            },
+                        },
                     }
                 )
+                # press.api.client.get_list
+                get_list_documentation = f"""These fields will be available in the response:
+- {', '.join(cls.dashboard_fields)}
 
-        # sort tags by name
-        tags.sort(key=lambda x: x["name"])
-
-        return {
-            "openapi": "3.0.0",
-            "info": {
-                "title": "Frappe Cloud API",
-                "description": "API documentation for Frappe Cloud",
-                "version": "1.0.0",
-            },
-            "servers": [
-                {
-                    "url": "https://frappecloud.com/v1",
-                    "description": "Production server",
-                }
-            ],
-            "paths": paths,
-            "tags": tags,
-        }
+You can specify the required fields in `fields` parameter."""
+                apis[cls.name].append(
+                    {
+                        "method": "POST",
+                        "path": f"/api/method/press.api.client.get_list",
+                        "description": get_list_documentation,
+                        "parameters": {
+                            "doctype": {"default": doctype, "type": "str"},
+                            "fields": {
+                                "default": str(cls.dashboard_fields),
+                                "type": "list[str] | None",
+                            },
+                            "filters": {
+                                "default": "Replace with the filters",
+                                "type": "dict | None",
+                            },
+                            "order_by": {
+                                "default": "Replace with the order_by",
+                                "type": "str | None",
+                            },
+                            "start": {
+                                "default": "0",
+                                "type": "int",
+                            },
+                            "limit": {
+                                "default": "100",
+                                "type": "int",
+                            },
+                            "parent": {
+                                "default": "Parent document name",
+                                "type": "str | None",
+                            },
+                        },
+                    }
+                )
+        return apis
 
 
 # recurse("press/press/api", "press.api")
