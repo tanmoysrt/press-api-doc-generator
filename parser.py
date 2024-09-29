@@ -15,8 +15,10 @@ class FunctionArg:
 
 
 class FunctionInfo:
-    def __init__(self, func: ast.FunctionDef):
+    def __init__(self, func: ast.FunctionDef, file_path: str):
         self.name = func.name
+        self.lineno = func.lineno
+        self.file_path = file_path
         if (
             len(func.body) > 0
             and hasattr(func.body[0], "value")
@@ -54,6 +56,8 @@ class FunctionInfo:
     def as_dict(self):
         return {
             "type": "Function",
+            "lineno": self.lineno,
+            "file_path": self.file_path,
             "name": self.name,
             "docs": self.docs,
             "args": [arg.as_dict() for arg in self.args],
@@ -64,14 +68,16 @@ class FunctionInfo:
 
 
 class ClassInfo:
-    def __init__(self, cls: ast.ClassDef):
+    def __init__(self, cls: ast.ClassDef, file_path: str):
         self.name = cls.name
         self.functions: list[FunctionInfo] = []
         self.dashboard_fields: list[str] = []
+        self.lineno = cls.lineno
+        self.file_path = file_path
         if hasattr(cls, "body"):
             for node in cls.body:
                 if isinstance(node, ast.FunctionDef):
-                    self.functions.append(FunctionInfo(node))
+                    self.functions.append(FunctionInfo(node, file_path))
                 if isinstance(node, ast.Assign):
                     if (
                         node.targets
@@ -86,6 +92,7 @@ class ClassInfo:
     def as_dict(self):
         return {
             "type": "Class",
+            "lineno": self.lineno,
             "name": self.name,
             "dashboard_fields": self.dashboard_fields,
             "functions": [func.as_dict() for func in self.functions],
@@ -93,16 +100,16 @@ class ClassInfo:
 
 
 class TreeInfo:
-    def __init__(self, content: str, module_path: str):
+    def __init__(self, content: str, module_path: str, file_path: str):
         self.classes: list[ClassInfo] = []
         self.functions: list[FunctionInfo] = []
         self.module_path: str = module_path
 
         for node in ast.parse(content).body:
             if isinstance(node, ast.ClassDef):
-                self.classes.append(ClassInfo(node))
+                self.classes.append(ClassInfo(node, file_path))
             elif isinstance(node, ast.FunctionDef):
-                self.functions.append(FunctionInfo(node))
+                self.functions.append(FunctionInfo(node, file_path))
 
     def as_dict(self):
         return {

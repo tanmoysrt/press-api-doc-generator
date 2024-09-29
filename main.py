@@ -45,15 +45,16 @@ class PressAPIDocGenerator:
         "press/press/cleanup.py",
     ]
 
-    def __init__(self, target_path: str):
+    def __init__(self, target_path: str, code_reference_base: str):
+        self.code_reference_base = code_reference_base
+        self.target_path = target_path
         # append target path to the blacklisted paths
         self.BLACKLISTED_PATHS = [
             os.path.join(target_path, path) for path in self.BLACKLISTED_PATHS
         ]
         self.allowed_doctypes = get_allowed_doctypes(target_path)
         self.parsed_objects: list[TreeInfo] = []
-        # self.recurse(target_path, "")
-        self.recurse("press/press", "press")
+        self.recurse(target_path, "")
 
     def is_blacklisted(self, path):
         for blacklisted_path in self.BLACKLISTED_PATHS:
@@ -74,6 +75,7 @@ class PressAPIDocGenerator:
                         TreeInfo(
                             open(file_path).read(),
                             generate_module_path(base_module_path, file),
+                            file_path,
                         )
                     )
             for dir in dirs:
@@ -83,6 +85,12 @@ class PressAPIDocGenerator:
 
     def as_dict(self):
         return [obj.as_dict() for obj in self.parsed_objects]
+
+    def get_code_reference(self, file_path: str, line_number: int) -> str:
+        file_path = file_path[len(self.target_path) :]
+        if file_path.startswith("/"):
+            file_path = file_path[1:]
+        return f"{self.code_reference_base}{file_path}#L{line_number}"
 
     def generate_api_doc(self) -> dict:
         apis = {}  # group name -> [api]
@@ -94,6 +102,9 @@ class PressAPIDocGenerator:
                 if fun.is_whitelisted_api:
                     apis[tree.module_path].append(
                         {
+                            "code_reference": self.get_code_reference(
+                                fun.file_path, fun.lineno
+                            ),
                             "method": "POST",
                             "path": f"/api/method/{tree.module_path}.{fun.name}",
                             "description": fun.docs,
@@ -211,7 +222,10 @@ You can specify the required fields in `fields` parameter."""
 
 # print(json.dumps(PressAPIDocGenerator("press").as_dict(), indent=4))
 
-api_specs = PressAPIDocGenerator("press").generate_api_doc()
+api_specs = PressAPIDocGenerator(
+    "press",
+    "https://github.com/frappe/press/blob/29dee59349b6307d960a8be019130f255ec0da0e/",
+).generate_api_doc()
 
 with open("specs.json", "w") as f:
     json.dump(api_specs, f, indent=4)
@@ -222,7 +236,7 @@ with open("specs.json", "w") as f:
 # class Test:
 #     def hemlock(self, a, b):
 #         pass
-        
+
 # def hemlock(a, b):
 #     pass
 
