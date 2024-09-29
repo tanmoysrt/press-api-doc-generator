@@ -91,9 +91,9 @@ class ClassInfo:
 
 class TreeInfo:
     def __init__(self, content: str, module_path: str):
-        self.classes = []
-        self.functions = []
-        self.module_path = module_path
+        self.classes: list[ClassInfo] = []
+        self.functions: list[FunctionInfo] = []
+        self.module_path: str = module_path
 
         for node in ast.walk(ast.parse(content)):
             if isinstance(node, ast.ClassDef):

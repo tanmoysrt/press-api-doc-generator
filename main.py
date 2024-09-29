@@ -1,15 +1,8 @@
 import json
 import os
 
-from parser import  TreeInfo
+from parser import TreeInfo
 from utils import generate_module_path
-
-class APIDoc:
-    def __init__(self, path:str, params:dict, docs:str):
-        self.method = "POST"
-        self.path = path
-        self.params = params # key - type
-        self.docs = docs
 
 
 class PressAPIGenerator:
@@ -51,6 +44,7 @@ class PressAPIGenerator:
         "press/press/audit.py",
         "press/press/__init__.py",
         "press/press/cleanup.py",
+        "press/press/doctype",
     ]
 
     def __init__(self, target_path: str):
@@ -58,7 +52,7 @@ class PressAPIGenerator:
         self.BLACKLISTED_PATHS = [
             os.path.join(target_path, path) for path in self.BLACKLISTED_PATHS
         ]
-        self.parsed_objects = []
+        self.parsed_objects: list[TreeInfo] = []
         # self.recurse(target_path, "")
         self.recurse("press/press/api", "press.api")
 
@@ -87,8 +81,64 @@ class PressAPIGenerator:
     def as_dict(self):
         return [obj.as_dict() for obj in self.parsed_objects]
 
-    def generate_api_doc(self) -> list[APIDoc]:
-        pass
+    def generate_api_doc(self) -> dict:
+        paths = {}
+        tags = []
+        for tree in self.parsed_objects:
+            for fun in tree.functions:
+                if fun.is_whitelisted_api:
+                    paths[f"/api/method/{tree.module_path}.{fun.name}"] = {
+                        "post": {
+                            "tags": [tree.module_path],
+                            "description": fun.docs,
+                            "requestBody": {
+                                "required": len(fun.args) > 0,
+                                "content": {
+                                    "application/json": {
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                x.name: {
+                                                    "type": x.annotation,
+                                                }
+                                                for x in fun.args
+                                            },
+                                            "required": [x.name for x in fun.args],
+                                        }
+                                    }
+                                },
+                            },
+                            "responses": {"200": {"description": "Successful"}},
+                        }
+                    }
+
+            if len(tree.functions) > 0:
+                tags.append(
+                    {
+                        "name": tree.module_path,
+                    }
+                )
+
+        # sort tags by name
+        tags.sort(key=lambda x: x["name"])
+
+        return {
+            "openapi": "3.0.0",
+            "info": {
+                "title": "Frappe Cloud API",
+                "description": "API documentation for Frappe Cloud",
+                "version": "1.0.0",
+            },
+            "servers": [
+                {
+                    "url": "https://frappecloud.com/v1",
+                    "description": "Production server",
+                }
+            ],
+            "paths": paths,
+            "tags": tags,
+        }
+
 
 # recurse("press/press/api", "press.api")
 
@@ -106,4 +156,9 @@ class PressAPIGenerator:
 # )
 
 
-print(json.dumps(PressAPIGenerator("press").as_dict(), indent=4))
+# print(json.dumps(PressAPIGenerator("press").as_dict(), indent=4))
+
+api_specs = PressAPIGenerator("press").generate_api_doc()
+
+with open("specs.json", "w") as f:
+    json.dump(api_specs, f, indent=4)
