@@ -2,3 +2,4 @@ press/*
 __pycache__/*
 *.txt
 press
+api-explorer/specs.json
