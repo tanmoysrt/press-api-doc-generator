@@ -34,11 +34,7 @@ markdown.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 </script>
 
 <template>
-    <div
-        class="prose max-w-full"
-        :class="{
-            'prose-sm font-normal': isSmallText,
-        }"
-        v-html="markdown.render(source)"
-    />
+    <div class="prose max-w-full" :class="{
+        'prose-xs font-normal': isSmallText,
+    }" v-html="markdown.render(source)"></div>
 </template>
